@@ -22,6 +22,9 @@ SOFTWARE.
 
 #include <cstring>
 #include <iostream>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <net/ethernet.h>
 #include <net/if.h>
 #include <netinet/ip.h>
@@ -116,20 +119,25 @@ int main(int argc, char *argv[]) {
   timeval tv = {0, 0};
   while ((p = pcap_next(handle, &header))) {
     if (header.len != header.caplen) {
+      std::cerr << "Header wrong size" << std::endl;
       continue;
     }
-    auto eth = reinterpret_cast<const ether_header *>(p);
-    if (ntohs(eth->ether_type) != ETHERTYPE_IP) {
-      continue;
-    }
-    auto ip = reinterpret_cast<const iphdr *>(p + sizeof(ether_header));
+
+    // Removed check for ethernet frame, assumes we're playing back
+    // something that was sent to loopback.
+    //
+    // TODO FIXME Make this detect ethernet vs. loopback.
+    //
+    auto ip = reinterpret_cast<const iphdr *>(p + 4);
     if (ip->version != 4) {
+      std::cerr << "Not IPv4" << std::endl;
       continue;
     }
     if (ip->protocol != IPPROTO_UDP) {
+      std::cerr << "Not UDP" << std::endl;
       continue;
     }
-    auto udp = reinterpret_cast<const udphdr *>(p + sizeof(ether_header) +
+    auto udp = reinterpret_cast<const udphdr *>(p + 4 +
                                                 ip->ihl * 4);
 
     if (tv.tv_sec == 0) {
@@ -141,7 +149,7 @@ int main(int argc, char *argv[]) {
     usleep((diff.tv_sec * 1000000 + diff.tv_usec) * speed);
 
     ssize_t len = ntohs(udp->len) - 8;
-    const u_char *d = &p[sizeof(ether_header) + ip->ihl * 4 + sizeof(udphdr)];
+    const u_char *d = &p[4 + ip->ihl * 4 + sizeof(udphdr)];
 
     sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
