@@ -39,15 +39,17 @@ int main(int argc, char *argv[]) {
       "  -i iface    interface to send packets through\n"
       "  -l          enable loopback\n"
       "  -s speed    replay speed relative to pcap timestamps\n"
-      "  -t ttl      packet ttl";
+      "  -t ttl      packet ttl\n"
+      "  -L          pcap is loopback link type";
 
   int ifindex = 0;
   int loopback = 0;
+  int headersize = 14;
   double speed = 1;
   int ttl = -1;
 
   int opt;
-  while ((opt = getopt(argc, argv, "i:ls:t:")) != -1) {
+  while ((opt = getopt(argc, argv, "i:ls:t:L")) != -1) {
     switch (opt) {
     case 'i':
       ifindex = if_nametoindex(optarg);
@@ -64,6 +66,9 @@ int main(int argc, char *argv[]) {
       break;
     case 't':
       ttl = std::stoi(optarg);
+      break;
+    case 'L':
+      headersize = 4;
       break;
     default:
       std::cerr << "usage: " << argv[0] << usage << std::endl;
@@ -123,12 +128,7 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
-    // Removed check for ethernet frame, assumes we're playing back
-    // something that was sent to loopback.
-    //
-    // TODO FIXME Make this detect ethernet vs. loopback.
-    //
-    auto ip = reinterpret_cast<const iphdr *>(p + 4);
+    auto ip = reinterpret_cast<const iphdr *>(p + headersize);
     if (ip->version != 4) {
       std::cerr << "Not IPv4" << std::endl;
       continue;
@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
       std::cerr << "Not UDP" << std::endl;
       continue;
     }
-    auto udp = reinterpret_cast<const udphdr *>(p + 4 +
+    auto udp = reinterpret_cast<const udphdr *>(p + headersize +
                                                 ip->ihl * 4);
 
     if (tv.tv_sec == 0) {
@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
     usleep((diff.tv_sec * 1000000 + diff.tv_usec) * speed);
 
     ssize_t len = ntohs(udp->len) - 8;
-    const u_char *d = &p[4 + ip->ihl * 4 + sizeof(udphdr)];
+    const u_char *d = &p[headersize + ip->ihl * 4 + sizeof(udphdr)];
 
     sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
